@@ -48,5 +48,9 @@ struct CoreState {
   bool LoadProgram(const fs::path&);
   void RunInterpreter();
   void RunJit();
-  void dxyn(u8 x, u8 y, u8 n);
+  void dxyn(u8, u8, u8);
+private:
+  void (*cache[0x1000])();
+  Xbyak::CodeGenerator* gen;
+  void EmitInstruction(u16);
 };
