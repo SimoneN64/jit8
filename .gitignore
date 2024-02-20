@@ -6,3 +6,5 @@ roms/
 out/
 *.json
 .cache/
+*.bat
+*.sh

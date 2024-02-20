@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <xbyak.h>
 
+#define bswap_16(x) (((x) << 8) | ((x) >> 8))
+
 namespace fs = std::filesystem;
 
 constexpr auto kCpuFreq = 3355443;
@@ -16,7 +18,7 @@ using s16 = int16_t;
 using s32 = int32_t;
 
 struct CoreState {
-  u16 pc = 0x200, ip = 0, stack[16]{};
+  u16 PC = 0x200, ip = 0, stack[16]{};
   u8 ram[0x1000]{}, v[16]{}, sp = 0, delay = 0, sound = 0;
   u32 cycles = 0;
   bool draw = false;
