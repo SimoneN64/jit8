@@ -3,4 +3,7 @@ project(core)
 
 add_library(core Chip8.cpp Chip8.hpp)
 
-target_include_directories(core PRIVATE .)
+target_include_directories(core PRIVATE
+	.
+	../externals/xbyak/xbyak
+)

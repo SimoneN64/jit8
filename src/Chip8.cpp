@@ -20,3 +20,7 @@ bool CoreState::LoadProgram(const fs::path &path) {
   std::copy(binary.begin(), binary.end(), std::begin(ram)+0x200);
   return true;
 }
+
+void CoreState::RunInterpreter() {
+  
+}

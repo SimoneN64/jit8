@@ -1,6 +1,8 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <xbyak.h>
+
 namespace fs = std::filesystem;
 
 constexpr auto kCpuFreq = 3355443;
@@ -14,8 +16,8 @@ using s16 = int16_t;
 using s32 = int32_t;
 
 struct CoreState {
-  u16 pc = 0x200, ip = 0, stack[16];
-  u8 ram[0x1000]{}, v[16], sp = 0, delay = 0, sound = 0;
+  u16 pc = 0x200, ip = 0, stack[16]{};
+  u8 ram[0x1000]{}, v[16]{}, sp = 0, delay = 0, sound = 0;
   u32 cycles = 0;
   bool draw = false;
   static constexpr u8 font[80] = {
@@ -40,4 +42,5 @@ struct CoreState {
   CoreState();
 
   bool LoadProgram(const fs::path&);
+  void RunInterpreter();
 };
