@@ -13,6 +13,7 @@ constexpr auto kTimersRate = float(kCpuFreq)/60;
 using u8 = uint8_t;
 using u16 = uint16_t;
 using u32 = uint32_t;
+using u64 = uint64_t;
 using s8 = int8_t;
 using s16 = int16_t;
 using s32 = int32_t;
@@ -21,6 +22,7 @@ struct CoreState {
   u16 PC = 0x200, ip = 0, stack[16]{};
   u8 ram[0x1000]{}, v[16]{}, sp = 0, delay = 0, sound = 0;
   u32 cycles = 0;
+  bool display[64 * 32]{};
   bool draw = false;
   static constexpr u8 font[80] = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, //0
@@ -45,4 +47,6 @@ struct CoreState {
 
   bool LoadProgram(const fs::path&);
   void RunInterpreter();
+  void RunJit();
+  void dxyn(u8 x, u8 y, u8 n);
 };
