@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <xbyak.h>
+#include <cstring>
 
 #define bswap_16(x) (((x) << 8) | ((x) >> 8))
 
@@ -17,6 +18,23 @@ using u64 = uint64_t;
 using s8 = int8_t;
 using s16 = int16_t;
 using s32 = int32_t;
+
+#ifdef _WIN32
+#define contextPtr gen->rdi
+#define arg1 gen->rcx
+#define arg2 gen->rdx
+#define arg3 gen->r8
+#define arg4 gen->r9
+#else
+#define contextPtr gen->rax
+// rdi, rsi, rdx, rcx, r8, r9
+#define arg1 gen->rdi
+#define arg2 gen->rsi
+#define arg3 gen->rdx
+#define arg4 gen->rcx
+#define arg5 gen->r8
+#define arg6 gen->r9
+#endif
 
 struct CoreState {
   u16 PC = 0x200, ip = 0, stack[16]{};
@@ -51,12 +69,13 @@ struct CoreState {
   void dxyn(u8, u8, u8);
 private:
   template <typename T>
-  void emitMemberFunctionCall(T func) {
+  void emitMemberCall(T func, void* thisObject) {
     void* functionPtr;
+    auto thisPtr = reinterpret_cast<uintptr_t>(thisObject);
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
     static_assert(sizeof(T) == 8, "[x64 JIT] Invalid size for member function pointer");
-    std::memcpy(&functionPtr, &func, sizeof(T));
+        std::memcpy(&functionPtr, &func, sizeof(T));
 #else
     static_assert(sizeof(T) == 16, "[x64 JIT] Invalid size for member function pointer");
     uintptr_t arr[2];
@@ -67,11 +86,13 @@ private:
     thisPtr += arr[1];
 #endif
 
-    gen->mov(gen->rcx, gen->rdi);
-    gen->call(functionPtr);
+    gen->mov(arg1.cvt64(), thisPtr);
+    gen->mov(contextPtr, (uintptr_t)functionPtr);
+    gen->call(contextPtr);
+    gen->mov(contextPtr, (uintptr_t)this);
   }
 
-  void (*cache[0xE00])();
+  void (*cache[0xE00])(){};
   u8* code{};
   Xbyak::CodeGenerator* gen;
   void EmitInstruction(u16);

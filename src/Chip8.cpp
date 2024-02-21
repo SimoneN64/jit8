@@ -1,7 +1,6 @@
 #include <Chip8.hpp>
 #include <fstream>
 #include <vector>
-#include <cassert>
 #include <ctime>
 
 #define vx v[x]
@@ -12,10 +11,10 @@
 CoreState::CoreState() {
   srand(time(nullptr));
   std::copy(std::begin(font), std::end(font), std::begin(ram)+0x50);
-  memset(cache, 0, sizeof(*cache) * 0xE00);
+  memset(cache, 0, sizeof(*cache) * 32);
 
-  code = new u8[0x100000];
-  gen = new Xbyak::CodeGenerator(0x100000, code);
+  gen = new Xbyak::CodeGenerator;
+  gen->setProtectMode(Xbyak::CodeGenerator::PROTECT_RWE);
 }
 
 static inline std::vector<u8> ReadFileBinary(const std::string& path) {
@@ -65,9 +64,9 @@ void CoreState::RunInterpreter() {
     } break;
     case 0x1000: PC = addr; break;
     case 0x2000: stack[sp++] = PC; PC = addr; break;
-    case 0x3000: PC += 2 * !!(vx == kk); PC += 2; break;
-    case 0x4000: PC += 2 * !!(vx != kk); PC += 2; break;
-    case 0x5000: PC += 2 * !!(vx == vy); PC += 2; break;
+    case 0x3000: PC += 2 * (vx == kk); PC += 2; break;
+    case 0x4000: PC += 2 * (vx != kk); PC += 2; break;
+    case 0x5000: PC += 2 * (vx == vy); PC += 2; break;
     case 0x6000: vx  = kk; PC += 2; break;
     case 0x7000: vx += kk; PC += 2; break;
     case 0x8000:
@@ -77,12 +76,12 @@ void CoreState::RunInterpreter() {
         case 0x2: vx &= vy; PC += 2; break;
         case 0x3: vx ^= vy; PC += 2; break;
         case 0x4: 
-          vf = !!(u16(vx) + u16(vy) > 255);
+          vf = (u16(vx) + u16(vy) > 255);
           vx += vy;
           PC += 2;
           break;
         case 0x5:
-          vf = !!(vx > vy);
+          vf = (vx > vy);
           vx -= vy;
           PC += 2;
           break;
@@ -92,23 +91,24 @@ void CoreState::RunInterpreter() {
           PC += 2;
           break;
         case 0x7:
-          vf = !!(vx < vy);
+          vf = (vx < vy);
           vx = vy - vx;
           PC += 2;
           break;
         case 0xE:
-          vf = vx & 0x80;
+          vf = (vx & 0x80) != 0;
           vx <<= 1;
           PC += 2;
           break;
+        default: unimplemented("0x8000: %02X\n", n);
       }
       break;
-    case 0x9000: PC += 2 * !!(vx != vy); PC += 2; break;
+    case 0x9000: PC += 2 * (vx != vy); PC += 2; break;
     case 0xA000: ip = addr; PC += 2; break;
     case 0xB000: PC = v[0] + addr; break;
     case 0xC000: vx = rand() & kk; PC += 2; break;
     case 0xD000: dxyn(vx, vy, n); PC += 2; break;
-    case 0xE000: unimplemented("0xE000: %02X", kk); break;
+    case 0xE000: unimplemented("0xE000: %02X", kk);
     case 0xF000:
       switch(kk) {
         case 0x07: vx = delay; break;
@@ -148,7 +148,6 @@ static inline bool modifiesPC(u16 op) {
         case 0x0EE: return true;
         default: return false;
       }
-      break;
     case 0x1000: case 0x2000:
     case 0x3000: case 0x4000:
     case 0x9000: case 0xB000:
@@ -161,13 +160,13 @@ static inline bool modifiesPC(u16 op) {
 #undef vx
 #undef vy
 #undef vf
-#define vx (gen->rdi) + thisOffset(v[x])
-#define vy (gen->rdi) + thisOffset(v[y])
-#define vf (gen->rdi) + thisOffset(v[0xf])
+#define vx (contextPtr) + thisOffset(v[x])
+#define vy (contextPtr) + thisOffset(v[y])
+#define vf (contextPtr) + thisOffset(v[0xf])
 #define IncPC do { \
-  gen->mov(gen->r8w, gen->word[gen->rdi + thisOffset(PC)]); \
+  gen->mov(gen->r8w, gen->word[contextPtr + thisOffset(PC)]); \
   gen->add(gen->r8w, 2); \
-  gen->mov(gen->word[gen->rdi + thisOffset(PC)], gen->r8w); \
+  gen->mov(gen->word[contextPtr + thisOffset(PC)], gen->r8w); \
 } while(0)
 
 void CoreState::EmitInstruction(u16 op) {
@@ -181,64 +180,64 @@ void CoreState::EmitInstruction(u16 op) {
   case 0x0000: {
     switch (addr) {
     case 0x0E0:
-      gen->mov(gen->rcx, thisOffset(display));
-      gen->add(gen->rcx, gen->rdi);
-      gen->mov(gen->edx, 0);
-      gen->mov(gen->r8, 64 * 32);
-      gen->push(gen->rcx);
+      gen->mov(arg1, thisOffset(display));
+      gen->add(arg1, contextPtr);
+      gen->mov(arg2.cvt32(), 0);
+      gen->mov(arg3, 64 * 32);
+      gen->mov(gen->rax, (uintptr_t)memset);
       gen->call(memset);
-      gen->pop(gen->rcx);
+      gen->mov(gen->rax, (uintptr_t)this);
       gen->mov(gen->r8b, 1);
-      gen->mov(gen->byte[gen->rdi + thisOffset(draw)], gen->r8b);
+      gen->mov(gen->byte[contextPtr + thisOffset(draw)], gen->r8b);
       IncPC;
       break;
     case 0x0EE:
-      gen->mov(gen->r8b, gen->byte[gen->rdi + thisOffset(sp)]);
+      gen->mov(gen->r8b, gen->byte[contextPtr + thisOffset(sp)]);
       gen->sub(gen->r8b, 1);
-      gen->mov(gen->byte[gen->rdi + thisOffset(sp)], gen->r8b);
-      gen->mov(gen->r9w, gen->word[gen->rdi + thisOffset(stack) + thisOffset(sp)]);
-      gen->mov(gen->word[gen->rdi + thisOffset(PC)], gen->r9w);
+      gen->mov(gen->byte[contextPtr + thisOffset(sp)], gen->r8b);
+      gen->mov(gen->r9w, gen->word[contextPtr + thisOffset(stack) + thisOffset(sp)]);
+      gen->mov(gen->word[contextPtr + thisOffset(PC)], gen->r9w);
       IncPC;
       break;
     default: unimplemented("0x0000: %04X", addr);
     }
   } break;
   case 0x1000:
-    gen->mov(gen->word[gen->rdi + thisOffset(PC)], addr);
+    gen->mov(gen->word[contextPtr + thisOffset(PC)], addr);
     break;
   case 0x2000:
-    gen->mov(gen->r9w, gen->word[gen->rdi + thisOffset(PC)]);
-    gen->mov(gen->word[gen->rdi + thisOffset(stack) + thisOffset(sp)], gen->r9w);
-    gen->mov(gen->r8b, gen->byte[gen->rdi + thisOffset(sp)]);
+    gen->mov(gen->r9w, gen->word[contextPtr + thisOffset(PC)]);
+    gen->mov(gen->word[contextPtr + thisOffset(stack) + thisOffset(sp)], gen->r9w);
+    gen->mov(gen->r8b, gen->byte[contextPtr + thisOffset(sp)]);
     gen->add(gen->r8b, 1);
-    gen->mov(gen->byte[gen->rdi + thisOffset(sp)], gen->r8b);
-    gen->mov(gen->word[gen->rdi + thisOffset(PC)], addr);
+    gen->mov(gen->byte[contextPtr + thisOffset(sp)], gen->r8b);
+    gen->mov(gen->word[contextPtr + thisOffset(PC)], addr);
     break;
   case 0x3000:
     gen->xor_(gen->r8, gen->r8);
-    gen->mov(gen->r10b, 2);
+    gen->mov(gen->r10w, 2);
     gen->mov(gen->r9b, gen->byte[vx]);
     gen->cmp(gen->r9b, kk);
     gen->cmove(gen->r8w, gen->r10w);
-    gen->add(gen->word[gen->rdi + thisOffset(PC)], gen->r8b);
+    gen->add(gen->word[contextPtr + thisOffset(PC)], gen->r8w);
     IncPC;
     break;
   case 0x4000:
     gen->xor_(gen->r8, gen->r8);
-    gen->mov(gen->r10b, 2);
+    gen->mov(gen->r10w, 2);
     gen->mov(gen->r9b, gen->byte[vx]);
     gen->cmp(gen->r9b, kk);
-    gen->cmovne(gen->r8b, gen->r10b);
-    gen->add(gen->word[gen->rdi + thisOffset(PC)], gen->r8b);
+    gen->cmovne(gen->r8w, gen->r10w);
+    gen->add(gen->word[contextPtr + thisOffset(PC)], gen->r8w);
     IncPC;
     break;
   case 0x5000:
     gen->xor_(gen->r8, gen->r8);
-    gen->mov(gen->r10b, 2);
+    gen->mov(gen->r10w, 2);
     gen->mov(gen->r9b, gen->byte[vx]);
     gen->cmp(gen->r9b, gen->byte[vy]);
     gen->cmove(gen->r8w, gen->r10w);
-    gen->add(gen->word[gen->rdi + thisOffset(PC)], gen->r8b);
+    gen->add(gen->word[contextPtr + thisOffset(PC)], gen->r8w);
     IncPC;
     break;
   case 0x6000:
@@ -322,26 +321,27 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(gen->byte[vx], gen->r8b);
       IncPC;
       break;
+    default: unimplemented("0x8000: %02X\n", n);
     }
     break;
   case 0x9000:
     gen->xor_(gen->r8, gen->r8);
-    gen->mov(gen->r10b, 2);
+    gen->mov(gen->r10w, 2);
     gen->mov(gen->r9b, gen->byte[vx]);
     gen->cmp(gen->r9b, gen->byte[vy]);
-    gen->cmovne(gen->r8b, gen->r10b);
-    gen->add(gen->word[gen->rdi + thisOffset(PC)], gen->r8b);
+    gen->cmovne(gen->r8w, gen->r10w);
+    gen->add(gen->word[contextPtr + thisOffset(PC)], gen->r8w);
     IncPC;
     break;
   case 0xA000:
     gen->mov(gen->r8w, addr);
-    gen->mov(gen->word[gen->rdi + thisOffset(ip)], gen->r8w);
+    gen->mov(gen->word[contextPtr + thisOffset(ip)], gen->r8w);
     IncPC;
     break;
   case 0xB000:
-    gen->mov(gen->r8b, gen->byte[gen->rdi + thisOffset(v[0])]);
+    gen->mov(gen->r8b, gen->byte[contextPtr + thisOffset(v[0])]);
     gen->add(gen->r8w, addr);
-    gen->mov(gen->word[gen->rdi + thisOffset(PC)], gen->r8w);
+    gen->mov(gen->word[contextPtr + thisOffset(PC)], gen->r8w);
     break;
   case 0xC000:
     gen->mov(gen->byte[vx], rand() & kk);
@@ -351,12 +351,14 @@ void CoreState::EmitInstruction(u16 op) {
     gen->mov(gen->dl, gen->byte[vx]);
     gen->mov(gen->r8b, gen->byte[vy]);
     gen->mov(gen->r9b, n);
-    //gen->push(gen->rcx);
-    //emitMemberFunctionCall(&CoreState::dxyn);
-    //gen->pop(gen->rcx);
+    gen->mov(arg1.cvt64(), contextPtr);
+    gen->mov(arg2.cvt8(), gen->byte[vx]);
+    gen->mov(arg3.cvt8(), gen->byte[vy]);
+    gen->mov(arg4.cvt8(), n);
+    emitMemberCall(&CoreState::dxyn, this);
     IncPC;
     break;
-  case 0xE000: unimplemented("0xE000: %02X", kk); break;
+  case 0xE000: unimplemented("0xE000: %02X", kk);
   case 0xF000:
     switch (kk) {
     case 0x07:
@@ -364,29 +366,29 @@ void CoreState::EmitInstruction(u16 op) {
       break;
     case 0x15:
       gen->mov(gen->r8b, gen->byte[vx]);
-      gen->mov(gen->byte[gen->rdi + thisOffset(delay)], gen->r8b);
+      gen->mov(gen->byte[contextPtr + thisOffset(delay)], gen->r8b);
       break;
     case 0x18:
       gen->mov(gen->r8b, gen->byte[vx]);
-      gen->mov(gen->byte[gen->rdi + thisOffset(sound)], gen->r8b);
+      gen->mov(gen->byte[contextPtr + thisOffset(sound)], gen->r8b);
       break;
     case 0x1E:
-      gen->mov(gen->r8w, gen->word[gen->rdi + thisOffset(ip)]);
+      gen->mov(gen->r8w, gen->word[contextPtr + thisOffset(ip)]);
       gen->add(gen->r8w, gen->byte[vx]);
-      gen->mov(gen->word[gen->rdi + thisOffset(ip)], gen->r8w);
+      gen->mov(gen->word[contextPtr + thisOffset(ip)], gen->r8w);
       break;
     case 0x29: break;
     case 0x33:
       gen->mov(gen->al, gen->byte[vx]);
       gen->mov(gen->r8b, 100);
       gen->div(gen->r8b);
-      gen->mov(gen->byte[gen->rdi + thisOffset(ram[ip])], gen->al);
+      gen->mov(gen->byte[contextPtr + thisOffset(ram[ip])], gen->al);
 
       gen->mov(gen->al, gen->byte[vx]);
       gen->mov(gen->r8b, 10);
       gen->div(gen->r8b);
       gen->div(gen->r8b);
-      gen->mov(gen->byte[gen->rdi + thisOffset(ram[ip + 1])], gen->ah);
+      gen->mov(gen->byte[contextPtr + thisOffset(ram[ip + 1])], gen->ah);
 
       gen->mov(gen->al, gen->byte[vx]);
       gen->mov(gen->r8b, 100);
@@ -394,30 +396,30 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(gen->r8b, 10);
       gen->sar(gen->ax, 8);
       gen->div(gen->r8b);
-      gen->mov(gen->byte[gen->rdi + thisOffset(ram[ip + 2])], gen->ah);
+      gen->mov(gen->byte[contextPtr + thisOffset(ram[ip + 2])], gen->ah);
       memset(cache, 0, sizeof(*cache) * 0xE00);
       break;
     case 0x55:
-      gen->mov(gen->rcx, thisOffset(ram[ip]));
-      gen->add(gen->rcx, gen->rdi);
-      gen->mov(gen->rdx, thisOffset(v[0]));
-      gen->mov(gen->rdx, gen->rdi);
-      gen->mov(gen->r8, x + 1);
-      gen->push(gen->rcx);
-      gen->call(memcpy);
-      gen->pop(gen->rcx);
+      gen->mov(arg1, thisOffset(ram[ip]));
+      gen->add(arg1, contextPtr);
+      gen->mov(arg2, thisOffset(v[0]));
+      gen->mov(arg2, contextPtr);
+      gen->mov(arg3.cvt8(), x + 1);
+      gen->mov(gen->rax, (uintptr_t)memcpy);
+      gen->call(gen->rax);
+      gen->mov(gen->rax, (uintptr_t)this);
 
       memset(cache, 0, sizeof(*cache) * 0xE00);
       break;
     case 0x65:
-      gen->mov(gen->rcx, thisOffset(v[0]));
-      gen->mov(gen->rcx, gen->rdi);
-      gen->mov(gen->rdx, thisOffset(ram[ip]));
-      gen->add(gen->rdx, gen->rdi);
-      gen->mov(gen->r8, x + 1);
-      gen->push(gen->rcx);
-      gen->call(memcpy);
-      gen->pop(gen->rcx);
+      gen->mov(arg1, thisOffset(v[0]));
+      gen->add(arg1, contextPtr);
+      gen->mov(arg2, thisOffset(ram[ip]));
+      gen->add(arg2, contextPtr);
+      gen->mov(arg3.cvt8(), x + 1);
+      gen->mov(gen->rax, (uintptr_t)memcpy);
+      gen->call(gen->rax);
+      gen->mov(gen->rax, (uintptr_t)this);
       break;
     default: unimplemented("0xF000: %02X", kk);
     }
@@ -437,15 +439,34 @@ void CoreState::EmitInstruction(u16 op) {
   if (sound <= 0) sound = 60;
 }
 
+static inline void Push(Xbyak::CodeGenerator& code, const std::initializer_list<Xbyak::Reg64>& regs) {
+  for (auto reg: regs) {
+    code.push(reg);
+  }
+}
+
+static inline void Pop(Xbyak::CodeGenerator& code, const std::initializer_list<Xbyak::Reg64>& regs) {
+  auto end = std::rend(regs);
+  for(auto it = std::rbegin(regs); it != end; ++it) {
+    code.pop(*it);
+  }
+}
+
 void CoreState::RunJit() {
   u16 pc = PC;
   
-  if (cache[(pc - 0x200) & 0xdff]) {
-    printf("Block @ %04X is already compiled\n", pc);
-    cache[(pc - 0x200) & 0xdff]();
+  if (cache[(PC - 0x200) & 0xdff]) {
+    cache[(PC - 0x200) & 0xdff]();
   } else {
-    gen->push(gen->rdi);
-    gen->mov(gen->rdi, (uintptr_t)this);
+    cache[(PC - 0x200) & 0xdff] = gen->getCurr<void(*)()>();
+
+    Push(*gen, {gen->rbx, gen->rbp, gen->r12, gen->r13, gen->r14, gen->r15});
+#ifdef _WIN32
+    Push(*gen, {gen->rsi, gen->rdi});
+#endif
+    gen->mov(gen->rbp, gen->rsp);
+    gen->mov(contextPtr, (uintptr_t)this);
+
     u16 op = bswap_16(*reinterpret_cast<u16*>(&ram[pc]));
     EmitInstruction(op);
     while (!modifiesPC(op)) {
@@ -454,9 +475,11 @@ void CoreState::RunJit() {
       EmitInstruction(op);
     }
 
-    gen->pop(gen->rdi);
+#ifdef _WIN32
+    Pop(*gen, {gen->rsi, gen->rdi});
+#endif
+    Pop(*gen, {gen->rbx, gen->rbp, gen->r12, gen->r13, gen->r14, gen->r15});
     gen->ret();
-    cache[(pc - 0x200) & 0xdff] = gen->getCode<void(*)()>();
-    cache[(pc - 0x200) & 0xdff]();
+    cache[(PC - 0x200) & 0xdff]();
   }
 }
