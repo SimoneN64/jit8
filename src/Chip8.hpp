@@ -50,7 +50,29 @@ struct CoreState {
   void RunJit();
   void dxyn(u8, u8, u8);
 private:
+  template <typename T>
+  void emitMemberFunctionCall(T func) {
+    void* functionPtr;
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
+    static_assert(sizeof(T) == 8, "[x64 JIT] Invalid size for member function pointer");
+    std::memcpy(&functionPtr, &func, sizeof(T));
+#else
+    static_assert(sizeof(T) == 16, "[x64 JIT] Invalid size for member function pointer");
+    uintptr_t arr[2];
+    std::memcpy(arr, &func, sizeof(T));
+    // First 8 bytes correspond to the actual pointer to the function
+    functionPtr = reinterpret_cast<void*>(arr[0]);
+    // Next 8 bytes correspond to the "this" pointer adjustment
+    thisPtr += arr[1];
+#endif
+
+    gen->mov(gen->rcx, gen->rdi);
+    gen->call(functionPtr);
+  }
+
   void (*cache[0xE00])();
+  u8* code{};
   Xbyak::CodeGenerator* gen;
   void EmitInstruction(u16);
 };

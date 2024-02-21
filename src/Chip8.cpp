@@ -14,7 +14,8 @@ CoreState::CoreState() {
   std::copy(std::begin(font), std::end(font), std::begin(ram)+0x50);
   memset(cache, 0, sizeof(*cache) * 0xE00);
 
-  gen = new Xbyak::CodeGenerator(4096, Xbyak::AutoGrow);
+  code = new u8[0x100000];
+  gen = new Xbyak::CodeGenerator(0x100000, code);
 }
 
 static inline std::vector<u8> ReadFileBinary(const std::string& path) {
@@ -164,9 +165,9 @@ static inline bool modifiesPC(u16 op) {
 #define vy (gen->rdi) + thisOffset(v[y])
 #define vf (gen->rdi) + thisOffset(v[0xf])
 #define IncPC do { \
-  gen->mov(gen->r8w, gen->word[thisOffset(PC)]); \
+  gen->mov(gen->r8w, gen->word[gen->rdi + thisOffset(PC)]); \
   gen->add(gen->r8w, 2); \
-  gen->mov(gen->word[thisOffset(PC)], gen->r8w); \
+  gen->mov(gen->word[gen->rdi + thisOffset(PC)], gen->r8w); \
 } while(0)
 
 void CoreState::EmitInstruction(u16 op) {
@@ -187,7 +188,8 @@ void CoreState::EmitInstruction(u16 op) {
       gen->push(gen->rcx);
       gen->call(memset);
       gen->pop(gen->rcx);
-      gen->mov(gen->ptr[gen->rdi + thisOffset(draw)], 1);
+      gen->mov(gen->r8b, 1);
+      gen->mov(gen->byte[gen->rdi + thisOffset(draw)], gen->r8b);
       IncPC;
       break;
     case 0x0EE:
@@ -217,7 +219,7 @@ void CoreState::EmitInstruction(u16 op) {
     gen->mov(gen->r10b, 2);
     gen->mov(gen->r9b, gen->byte[vx]);
     gen->cmp(gen->r9b, kk);
-    gen->cmove(gen->r8b, gen->r10b);
+    gen->cmove(gen->r8w, gen->r10w);
     gen->add(gen->word[gen->rdi + thisOffset(PC)], gen->r8b);
     IncPC;
     break;
@@ -235,7 +237,7 @@ void CoreState::EmitInstruction(u16 op) {
     gen->mov(gen->r10b, 2);
     gen->mov(gen->r9b, gen->byte[vx]);
     gen->cmp(gen->r9b, gen->byte[vy]);
-    gen->cmove(gen->r8b, gen->r10b);
+    gen->cmove(gen->r8w, gen->r10w);
     gen->add(gen->word[gen->rdi + thisOffset(PC)], gen->r8b);
     IncPC;
     break;
@@ -332,7 +334,8 @@ void CoreState::EmitInstruction(u16 op) {
     IncPC;
     break;
   case 0xA000:
-    gen->mov(gen->word[gen->rdi + thisOffset(ip)], addr);
+    gen->mov(gen->r8w, addr);
+    gen->mov(gen->word[gen->rdi + thisOffset(ip)], gen->r8w);
     IncPC;
     break;
   case 0xB000:
@@ -345,12 +348,12 @@ void CoreState::EmitInstruction(u16 op) {
     IncPC;
     break;
   case 0xD000:
-    gen->mov(gen->cl, gen->byte[vx]);
-    gen->mov(gen->dl, gen->byte[vy]);
-    gen->mov(gen->r8b, n);
-    // gen->push(gen->rcx);
-    // gen->call(&CoreState::dxyn);
-    // gen->pop(gen->rcx);
+    gen->mov(gen->dl, gen->byte[vx]);
+    gen->mov(gen->r8b, gen->byte[vy]);
+    gen->mov(gen->r9b, n);
+    //gen->push(gen->rcx);
+    //emitMemberFunctionCall(&CoreState::dxyn);
+    //gen->pop(gen->rcx);
     IncPC;
     break;
   case 0xE000: unimplemented("0xE000: %02X", kk); break;
@@ -437,13 +440,14 @@ void CoreState::EmitInstruction(u16 op) {
 void CoreState::RunJit() {
   u16 pc = PC;
   
-  if (cache[(pc - 0x200) & 0xfff]) {
-    cache[(pc - 0x200) & 0xfff]();
-    return;
+  if (cache[(pc - 0x200) & 0xdff]) {
+    printf("Block @ %04X is already compiled\n", pc);
+    cache[(pc - 0x200) & 0xdff]();
   } else {
-    u16 op = 0x00E0; // dummy
     gen->push(gen->rdi);
     gen->mov(gen->rdi, (uintptr_t)this);
+    u16 op = bswap_16(*reinterpret_cast<u16*>(&ram[pc]));
+    EmitInstruction(op);
     while (!modifiesPC(op)) {
       pc += 2;
       op = bswap_16(*reinterpret_cast<u16*>(&ram[pc]));
@@ -452,8 +456,7 @@ void CoreState::RunJit() {
 
     gen->pop(gen->rdi);
     gen->ret();
-    gen->ready();
-    cache[(pc - 0x200) & 0xfff] = gen->getCode<void(*)()>();
-    cache[(pc - 0x200) & 0xfff]();
+    cache[(pc - 0x200) & 0xdff] = gen->getCode<void(*)()>();
+    cache[(pc - 0x200) & 0xdff]();
   }
 }

@@ -7,12 +7,15 @@
 #include <SDL2/SDL.h>
 
 int main(int argc, char** argv) {
+#ifdef _NDEBUG
   if(argc < 2) {
     printf("Usage: jit8 <chip-8 executable>\n");
     return -1;
   }
-
   fs::path romPath(argv[1]);
+#endif
+  fs::path romPath("D:/jit8/roms/2-ibm-logo.ch8");
+
   if(!fs::exists(romPath)) {
     printf("This file doesn't exist!\n");
     return -1;
