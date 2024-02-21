@@ -11,7 +11,7 @@
 CoreState::CoreState() {
   srand(time(nullptr));
   std::copy(std::begin(font), std::end(font), std::begin(ram)+0x50);
-  memset(cache, 0, sizeof(*cache) * 32);
+  memset(cache, 0, sizeof(*cache) * 0xE00);
 
   gen = new Xbyak::CodeGenerator;
   gen->setProtectMode(Xbyak::CodeGenerator::PROTECT_RWE);
@@ -397,7 +397,8 @@ void CoreState::EmitInstruction(u16 op) {
       gen->sar(gen->ax, 8);
       gen->div(gen->r8b);
       gen->mov(gen->byte[contextPtr + thisOffset(ram[ip + 2])], gen->ah);
-      memset(cache, 0, sizeof(*cache) * 0xE00);
+
+      cache[(ip - 0x200) & 0xdff] = nullptr;
       break;
     case 0x55:
       gen->mov(arg1, thisOffset(ram[ip]));
@@ -409,7 +410,7 @@ void CoreState::EmitInstruction(u16 op) {
       gen->call(gen->rax);
       gen->mov(gen->rax, (uintptr_t)this);
 
-      memset(cache, 0, sizeof(*cache) * 0xE00);
+      cache[(ip - 0x200) & 0xdff] = nullptr;
       break;
     case 0x65:
       gen->mov(arg1, thisOffset(v[0]));
