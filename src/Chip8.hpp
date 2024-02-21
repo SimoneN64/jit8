@@ -50,7 +50,7 @@ struct CoreState {
   void RunJit();
   void dxyn(u8, u8, u8);
 private:
-  void (*cache[0x1000])();
+  void (*cache[0xE00])();
   Xbyak::CodeGenerator* gen;
   void EmitInstruction(u16);
 };
