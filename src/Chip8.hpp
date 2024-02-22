@@ -38,6 +38,11 @@ using s32 = int32_t;
 #define BLOCKS_SIZE 0x700
 #define BLOCKS_DSIZE ((BLOCKS_SIZE) - 1)
 
+struct BasicBlock {
+  u32 cks{}, start_addr{}, end_addr{};
+  void(*func)() = nullptr;
+};
+
 struct CoreState {
   u16 PC = 0x200, ip = 0, stack[16]{};
   u8 ram[0x1000]{}, v[16]{}, sp = 0, delay = 0, sound = 0;
@@ -94,7 +99,8 @@ private:
     gen->mov(contextPtr, (uintptr_t)this);
   }
 
-  void (*cache[BLOCKS_SIZE])(){};
+  void invalidate(u16);
+  BasicBlock cache[BLOCKS_SIZE]{};
   u8* code{};
   Xbyak::CodeGenerator* gen;
   void EmitInstruction(u16);

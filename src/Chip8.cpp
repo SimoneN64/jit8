@@ -115,7 +115,7 @@ void CoreState::RunInterpreter() {
         case 0x15: delay = vx; break;
         case 0x18: sound = vx; break;
         case 0x1E: ip += vx; break;
-        case 0x29: break;
+        case 0x29: ip = 0x50 + vx * 5; break;
         case 0x33:
           ram[ip] = vx / 100;
           ram[ip+1] = (vx / 10) % 10;
@@ -376,34 +376,43 @@ void CoreState::EmitInstruction(u16 op) {
       gen->add(gen->r8w, gen->byte[vx]);
       gen->mov(gen->word[contextPtr + thisOffset(ip)], gen->r8w);
       break;
-    case 0x29: break;
+    case 0x29:
+      gen->mov(gen->r8b, gen->byte[vx]);
+      gen->mov(contextPtr, 5);
+      gen->mul(gen->r8b);
+      gen->mov(gen->r8b, contextPtr.cvt8());
+      gen->mov(contextPtr, (uintptr_t)this);
+      gen->add(gen->r8b, 0x50);
+      gen->mov(gen->word[contextPtr + thisOffset(ip)], gen->r8w);
+      break;
     case 0x33:
+      gen->mov(gen->r9, contextPtr);
+      gen->xor_(gen->rdx, gen->rdx);
       gen->mov(gen->al, gen->byte[vx]);
       gen->mov(gen->r8b, 100);
       gen->div(gen->r8b);
-      gen->mov(gen->byte[contextPtr + thisOffset(ram[ip])], gen->al);
+      gen->mov(gen->byte[gen->r9 + thisOffset(ram[ip])], gen->al);
 
+      gen->xor_(gen->rdx, gen->rdx);
       gen->mov(gen->al, gen->byte[vx]);
       gen->mov(gen->r8b, 10);
       gen->div(gen->r8b);
       gen->div(gen->r8b);
-      gen->mov(gen->byte[contextPtr + thisOffset(ram[ip + 1])], gen->ah);
+      gen->mov(gen->byte[gen->r9 + thisOffset(ram[ip + 1])], gen->al);
 
+      gen->xor_(gen->rdx, gen->rdx);
       gen->mov(gen->al, gen->byte[vx]);
       gen->mov(gen->r8b, 100);
       gen->div(gen->r8b);
       gen->mov(gen->r8b, 10);
       gen->sar(gen->ax, 8);
       gen->div(gen->r8b);
-      gen->mov(gen->byte[contextPtr + thisOffset(ram[ip + 2])], gen->ah);
+      gen->mov(gen->byte[gen->r9 + thisOffset(ram[ip + 2])], gen->al);
+      gen->mov(contextPtr, gen->r9);
 
-      if (ip & 1) {
-        cache[(ip - 1 - 0x200) & BLOCKS_DSIZE] = nullptr;
-        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
-      } else {
-        cache[(ip + 0 - 0x200) & BLOCKS_DSIZE] = nullptr;
-        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
-      }
+      invalidate(ip);
+      invalidate(ip + 1);
+      invalidate(ip + 2);
       break;
     case 0x55:
       gen->mov(arg1, thisOffset(ram[ip]));
@@ -411,18 +420,11 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(arg2, thisOffset(v[0]));
       gen->mov(arg2, contextPtr);
       gen->mov(arg3.cvt8(), x + 1);
-      gen->mov(gen->rax, (uintptr_t)memcpy);
-      gen->call(gen->rax);
-      gen->mov(gen->rax, (uintptr_t)this);
+      gen->mov(contextPtr, (uintptr_t)memcpy);
+      gen->call(contextPtr);
+      gen->mov(contextPtr, (uintptr_t)this);
 
-
-      if (ip & 1) {
-        cache[(ip - 1 - 0x200) & BLOCKS_DSIZE] = nullptr;
-        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
-      } else {
-        cache[(ip + 0 - 0x200) & BLOCKS_DSIZE] = nullptr;
-        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
-      }
+      invalidate(ip);
       break;
     case 0x65:
       gen->mov(arg1, thisOffset(v[0]));
@@ -430,9 +432,9 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(arg2, thisOffset(ram[ip]));
       gen->add(arg2, contextPtr);
       gen->mov(arg3.cvt8(), x + 1);
-      gen->mov(gen->rax, (uintptr_t)memcpy);
-      gen->call(gen->rax);
-      gen->mov(gen->rax, (uintptr_t)this);
+      gen->mov(contextPtr, (uintptr_t)memcpy);
+      gen->call(contextPtr);
+      gen->mov(contextPtr, (uintptr_t)this);
       break;
     default: unimplemented("0xF000: %02X", kk);
     }
@@ -465,13 +467,28 @@ static inline void Pop(Xbyak::CodeGenerator& code, const std::initializer_list<X
   }
 }
 
+void CoreState::invalidate(u16 addr) {
+  auto [cks, start_addr, end_addr, func] = cache[addr & BLOCKS_DSIZE];
+  // we do not care about non-program stuff
+  if(addr < 0x200) return;
+
+  // early exit if it's not compiled in the first place
+  if(!func) return;
+
+  printf("Invalidating block @ %04X\n", addr);
+  cache[addr & BLOCKS_DSIZE].func = nullptr;
+  cache[addr & BLOCKS_DSIZE].start_addr = -1;
+  cache[addr & BLOCKS_DSIZE].end_addr = -1;
+}
+
 void CoreState::RunJit() {
   u16 pc = PC;
   
-  if (cache[(PC - 0x200) & BLOCKS_DSIZE]) {
-    cache[(PC - 0x200) & BLOCKS_DSIZE]();
+  if (cache[(PC - 0x200) & BLOCKS_DSIZE].func) {
+    cache[(PC - 0x200) & BLOCKS_DSIZE].func();
   } else {
-    cache[(PC - 0x200) & BLOCKS_DSIZE] = gen->getCurr<void(*)()>();
+    cache[(PC - 0x200) & BLOCKS_DSIZE].start_addr = pc;
+    cache[(PC - 0x200) & BLOCKS_DSIZE].func = gen->getCurr<void(*)()>();
 
     Push(*gen, {gen->rbx, gen->rbp, gen->r12, gen->r13, gen->r14, gen->r15});
 #ifdef _WIN32
@@ -493,6 +510,7 @@ void CoreState::RunJit() {
 #endif
     Pop(*gen, {gen->rbx, gen->rbp, gen->r12, gen->r13, gen->r14, gen->r15});
     gen->ret();
-    cache[(PC - 0x200) & BLOCKS_DSIZE]();
+    cache[(PC - 0x200) & BLOCKS_DSIZE].end_addr = pc;
+    cache[(PC - 0x200) & BLOCKS_DSIZE].func();
   }
 }
