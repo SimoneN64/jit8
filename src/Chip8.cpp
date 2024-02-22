@@ -11,7 +11,7 @@
 CoreState::CoreState() {
   srand(time(nullptr));
   std::copy(std::begin(font), std::end(font), std::begin(ram)+0x50);
-  memset(cache, 0, sizeof(*cache) * 0xE00);
+  memset(cache, 0, sizeof(*cache) * BLOCKS_SIZE);
 
   gen = new Xbyak::CodeGenerator;
   gen->setProtectMode(Xbyak::CodeGenerator::PROTECT_RWE);
@@ -184,9 +184,9 @@ void CoreState::EmitInstruction(u16 op) {
       gen->add(arg1, contextPtr);
       gen->mov(arg2.cvt32(), 0);
       gen->mov(arg3, 64 * 32);
-      gen->mov(gen->rax, (uintptr_t)memset);
+      gen->mov(contextPtr, (uintptr_t)memset);
       gen->call(memset);
-      gen->mov(gen->rax, (uintptr_t)this);
+      gen->mov(contextPtr, (uintptr_t)this);
       gen->mov(gen->r8b, 1);
       gen->mov(gen->byte[contextPtr + thisOffset(draw)], gen->r8b);
       IncPC;
@@ -351,7 +351,6 @@ void CoreState::EmitInstruction(u16 op) {
     gen->mov(gen->dl, gen->byte[vx]);
     gen->mov(gen->r8b, gen->byte[vy]);
     gen->mov(gen->r9b, n);
-    gen->mov(arg1.cvt64(), contextPtr);
     gen->mov(arg2.cvt8(), gen->byte[vx]);
     gen->mov(arg3.cvt8(), gen->byte[vy]);
     gen->mov(arg4.cvt8(), n);
@@ -398,7 +397,13 @@ void CoreState::EmitInstruction(u16 op) {
       gen->div(gen->r8b);
       gen->mov(gen->byte[contextPtr + thisOffset(ram[ip + 2])], gen->ah);
 
-      cache[(ip - 0x200) & 0xdff] = nullptr;
+      if (ip & 1) {
+        cache[(ip - 1 - 0x200) & BLOCKS_DSIZE] = nullptr;
+        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
+      } else {
+        cache[(ip + 0 - 0x200) & BLOCKS_DSIZE] = nullptr;
+        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
+      }
       break;
     case 0x55:
       gen->mov(arg1, thisOffset(ram[ip]));
@@ -410,7 +415,14 @@ void CoreState::EmitInstruction(u16 op) {
       gen->call(gen->rax);
       gen->mov(gen->rax, (uintptr_t)this);
 
-      cache[(ip - 0x200) & 0xdff] = nullptr;
+
+      if (ip & 1) {
+        cache[(ip - 1 - 0x200) & BLOCKS_DSIZE] = nullptr;
+        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
+      } else {
+        cache[(ip + 0 - 0x200) & BLOCKS_DSIZE] = nullptr;
+        cache[(ip + 2 - 0x200) & BLOCKS_DSIZE] = nullptr;
+      }
       break;
     case 0x65:
       gen->mov(arg1, thisOffset(v[0]));
@@ -456,10 +468,10 @@ static inline void Pop(Xbyak::CodeGenerator& code, const std::initializer_list<X
 void CoreState::RunJit() {
   u16 pc = PC;
   
-  if (cache[(PC - 0x200) & 0xdff]) {
-    cache[(PC - 0x200) & 0xdff]();
+  if (cache[(PC - 0x200) & BLOCKS_DSIZE]) {
+    cache[(PC - 0x200) & BLOCKS_DSIZE]();
   } else {
-    cache[(PC - 0x200) & 0xdff] = gen->getCurr<void(*)()>();
+    cache[(PC - 0x200) & BLOCKS_DSIZE] = gen->getCurr<void(*)()>();
 
     Push(*gen, {gen->rbx, gen->rbp, gen->r12, gen->r13, gen->r14, gen->r15});
 #ifdef _WIN32
@@ -481,6 +493,6 @@ void CoreState::RunJit() {
 #endif
     Pop(*gen, {gen->rbx, gen->rbp, gen->r12, gen->r13, gen->r14, gen->r15});
     gen->ret();
-    cache[(PC - 0x200) & 0xdff]();
+    cache[(PC - 0x200) & BLOCKS_DSIZE]();
   }
 }

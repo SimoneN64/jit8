@@ -35,6 +35,8 @@ using s32 = int32_t;
 #define arg5 gen->r8
 #define arg6 gen->r9
 #endif
+#define BLOCKS_SIZE 0x700
+#define BLOCKS_DSIZE ((BLOCKS_SIZE) - 1)
 
 struct CoreState {
   u16 PC = 0x200, ip = 0, stack[16]{};
@@ -92,7 +94,7 @@ private:
     gen->mov(contextPtr, (uintptr_t)this);
   }
 
-  void (*cache[0xE00])(){};
+  void (*cache[BLOCKS_SIZE])(){};
   u8* code{};
   Xbyak::CodeGenerator* gen;
   void EmitInstruction(u16);
