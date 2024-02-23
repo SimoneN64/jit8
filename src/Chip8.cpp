@@ -188,7 +188,7 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(arg2.cvt32(), 0);
       gen->mov(arg3, 32*sizeof(u64));
       gen->mov(contextPtr, (uintptr_t)memset);
-      gen->call(memset);
+      gen->call(contextPtr);
       gen->mov(contextPtr, (uintptr_t)this);
       gen->mov(gen->r8b, 1);
       gen->mov(gen->byte[contextPtr + thisOffset(draw)], gen->r8b);
