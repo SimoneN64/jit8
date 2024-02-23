@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
       SDL_RenderClear(renderer);
       for(int y = 0; y < 32; y++) {
         for(int x = 0; x < 64; x++) {
-          if(core.display[y * 64 + x]) {
+          if(core.display[y] & (1ull << x)) {
             texBuf[(y * 64 + x)] = 0xffffffff;
           } else {
             texBuf[(y * 64 + x)] = 0xff000000;

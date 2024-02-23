@@ -47,7 +47,7 @@ struct CoreState {
   u16 PC = 0x200, ip = 0, stack[16]{};
   u8 ram[0x1000]{}, v[16]{}, sp = 0, delay = 0, sound = 0;
   u32 cycles = 0;
-  bool display[64 * 32]{};
+  u64 display[32]{};
   bool draw = false;
   static constexpr u8 font[80] = {
     0xF0, 0x90, 0x90, 0x90, 0xF0, //0

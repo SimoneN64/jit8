@@ -35,10 +35,13 @@ void CoreState::dxyn(u8 x, u8 y, u8 n) {
     auto pixel = ram[ip + yy];
     for(int xx = 0; xx < 8; xx++) {
       if((pixel & (0x80 >> xx)) != 0) {
-        if (display[(xx + x) + ((yy + y) * 64)]) {
+        if (display[yy + y] & (1ull << (xx + x))) {
           vf = 1;
+          display[yy + y] &= ~(1ull << (xx + x));
+        } else {
+          vf = 0;
+          display[yy + y] |= (1ull << (xx + x));
         }
-        display[(xx + x) + ((yy + y) * 64)] ^= 1;
       }
     }
   }
@@ -57,7 +60,7 @@ void CoreState::RunInterpreter() {
   switch(op & 0xf000) {
     case 0x0000: {
       switch(addr) {
-        case 0x0E0: memset(display, 0, 64*32); draw = true; PC += 2; break;
+        case 0x0E0: memset(display, 0, 32*sizeof(u64)); draw = true; PC += 2; break;
         case 0x0EE: PC = stack[--sp]; PC += 2; break;
         default: unimplemented("0x0000: %04X", addr);
       }
@@ -183,7 +186,7 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(arg1, thisOffset(display));
       gen->add(arg1, contextPtr);
       gen->mov(arg2.cvt32(), 0);
-      gen->mov(arg3, 64 * 32);
+      gen->mov(arg3, 32*sizeof(u64));
       gen->mov(contextPtr, (uintptr_t)memset);
       gen->call(memset);
       gen->mov(contextPtr, (uintptr_t)this);
