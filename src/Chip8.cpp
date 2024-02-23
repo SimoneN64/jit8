@@ -195,10 +195,11 @@ void CoreState::EmitInstruction(u16 op) {
       IncPC;
       break;
     case 0x0EE:
+      gen->xor_(gen->r8, gen->r8);
       gen->mov(gen->r8b, gen->byte[contextPtr + thisOffset(sp)]);
       gen->sub(gen->r8b, 1);
       gen->mov(gen->byte[contextPtr + thisOffset(sp)], gen->r8b);
-      gen->mov(gen->r9w, gen->word[contextPtr + thisOffset(stack) + thisOffset(sp)]);
+      gen->mov(gen->r9w, gen->word[contextPtr + thisOffset(stack[0]) + gen->r8]);
       gen->mov(gen->word[contextPtr + thisOffset(PC)], gen->r9w);
       IncPC;
       break;
@@ -478,10 +479,14 @@ void CoreState::invalidate(u16 addr) {
   // early exit if it's not compiled in the first place
   if(!func) return;
 
-  printf("Invalidating block @ %04X\n", addr);
-  cache[addr & BLOCKS_DSIZE].func = nullptr;
-  cache[addr & BLOCKS_DSIZE].start_addr = -1;
-  cache[addr & BLOCKS_DSIZE].end_addr = -1;
+  for (int i = 0; i < BLOCKS_SIZE; i++) {
+    if (addr >= cache[i].start_addr && addr <= cache[i].end_addr) {
+      cache[i].func = nullptr;
+      cache[i].start_addr = -1;
+      cache[i].end_addr = -1;
+      break;
+    }
+  }
 }
 
 void CoreState::RunJit() {
