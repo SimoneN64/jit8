@@ -49,6 +49,12 @@ void CoreState::dxyn(u8 x, u8 y, u8 n) {
   draw = true;
 }
 
+void CoreState::Fx33(u8 x, u8 y) {
+  ram[ip] = vx / 100;
+  ram[ip+1] = (vx / 10) % 10;
+  ram[ip+2] = (vx % 100) % 10;
+}
+
 void CoreState::RunInterpreter() {
   u16 op = bswap_16(*reinterpret_cast<u16*>(&ram[PC]));
   u16 addr = op & 0xfff;
@@ -119,11 +125,7 @@ void CoreState::RunInterpreter() {
         case 0x18: sound = vx; break;
         case 0x1E: ip += vx; break;
         case 0x29: ip = 0x50 + vx * 5; break;
-        case 0x33:
-          ram[ip] = vx / 100;
-          ram[ip+1] = (vx / 10) % 10;
-          ram[ip+2] = (vx % 100) % 10;
-          break;
+        case 0x33: Fx33(x, y); break;
         case 0x55: memcpy(&ram[ip], v, x+1); break;
         case 0x65: memcpy(v, &ram[ip], x+1); break;
         default: unimplemented("0xF000: %02X", kk);
@@ -199,8 +201,8 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(gen->r8b, gen->byte[contextPtr + thisOffset(sp)]);
       gen->sub(gen->r8b, 1);
       gen->mov(gen->byte[contextPtr + thisOffset(sp)], gen->r8b);
-      gen->mov(gen->r9w, gen->word[contextPtr + thisOffset(stack[0]) + gen->r8]);
-      gen->mov(gen->word[contextPtr + thisOffset(PC)], gen->r9w);
+      gen->mov(gen->r9w, gen->word[2*contextPtr + thisOffset(stack[0]) + gen->r8]);
+      gen->mov(gen->word[2*contextPtr + thisOffset(PC)], gen->r9w);
       IncPC;
       break;
     default: unimplemented("0x0000: %04X", addr);
@@ -352,9 +354,6 @@ void CoreState::EmitInstruction(u16 op) {
     IncPC;
     break;
   case 0xD000:
-    gen->mov(gen->dl, gen->byte[vx]);
-    gen->mov(gen->r8b, gen->byte[vy]);
-    gen->mov(gen->r9b, n);
     gen->mov(arg2.cvt8(), gen->byte[vx]);
     gen->mov(arg3.cvt8(), gen->byte[vy]);
     gen->mov(arg4.cvt8(), n);
@@ -390,29 +389,9 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(gen->word[contextPtr + thisOffset(ip)], gen->r8w);
       break;
     case 0x33:
-      gen->mov(gen->r9, contextPtr);
-      gen->xor_(gen->rdx, gen->rdx);
-      gen->mov(gen->al, gen->byte[vx]);
-      gen->mov(gen->r8b, 100);
-      gen->div(gen->r8b);
-      gen->mov(gen->byte[gen->r9 + thisOffset(ram[ip])], gen->al);
-
-      gen->xor_(gen->rdx, gen->rdx);
-      gen->mov(gen->al, gen->byte[vx]);
-      gen->mov(gen->r8b, 10);
-      gen->div(gen->r8b);
-      gen->div(gen->r8b);
-      gen->mov(gen->byte[gen->r9 + thisOffset(ram[ip + 1])], gen->al);
-
-      gen->xor_(gen->rdx, gen->rdx);
-      gen->mov(gen->al, gen->byte[vx]);
-      gen->mov(gen->r8b, 100);
-      gen->div(gen->r8b);
-      gen->mov(gen->r8b, 10);
-      gen->sar(gen->ax, 8);
-      gen->div(gen->r8b);
-      gen->mov(gen->byte[gen->r9 + thisOffset(ram[ip + 2])], gen->al);
-      gen->mov(contextPtr, gen->r9);
+      gen->mov(arg2.cvt8(), x);
+      gen->mov(arg3.cvt8(), y);
+      emitMemberCall(&CoreState::Fx33, this);
 
       invalidate(ip);
       invalidate(ip + 1);
