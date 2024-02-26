@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
   bool running = true;
 
   while(running) {
-    core.RunInterpreter();
+    core.RunJit();
 
     if(core.draw) {
       SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);

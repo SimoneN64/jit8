@@ -106,7 +106,7 @@ private:
     gen->mov(contextPtr, (uintptr_t)this);
   }
 
-  void Fx33(u8, u8);
+  void Fx33(u8);
   void invalidate(u16);
   BasicBlock cache[BLOCKS_SIZE]{};
   u8* code{};
