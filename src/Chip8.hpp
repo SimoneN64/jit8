@@ -20,14 +20,21 @@ using s16 = int16_t;
 using s32 = int32_t;
 
 #ifdef _WIN32
-#define contextPtr gen->rdi
+#define contextPtr gen->r10
+#define reg_PC gen->ax
+#define reg_VX gen->rcx.cvt8()
+#define reg_VY gen->rdx.cvt8()
+#define reg_VF gen->r8.cvt8()
 #define arg1 gen->rcx
 #define arg2 gen->rdx
 #define arg3 gen->r8
 #define arg4 gen->r9
 #else
-#define contextPtr gen->rax
-// rdi, rsi, rdx, rcx, r8, r9
+#define contextPtr gen->r10
+#define reg_PC gen->ax
+#define reg_VX gen->rdi.cvt8()
+#define reg_VY gen->rsi.cvt8()
+#define reg_VF gen->rdx.cvt8()
 #define arg1 gen->rdi
 #define arg2 gen->rsi
 #define arg3 gen->rdx
