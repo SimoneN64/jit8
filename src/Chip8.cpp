@@ -31,6 +31,7 @@ bool CoreState::LoadProgram(const fs::path &path) {
 
 void CoreState::dxyn(u8 x, u8 y, u8 n) {
   vf = 0;
+  printf("VX: %02X, VY: %02X, N: %02X\n", x, y, n);
   for(int yy = 0; yy < n; yy++) {
     auto pixel = ram[ip + yy];
     for(int xx = 0; xx < 8; xx++) {
@@ -178,26 +179,25 @@ void CoreState::EmitInstruction(u16 op) {
   u8 n = kk & 0xf;
   u8 x = (op >> 8) & 0xf;
   u8 y = (op >> 4) & 0xf;
-  gen->mov(reg_VX, gen->word[vx]);
-  gen->mov(reg_VY, gen->word[vy]);
+  gen->mov(reg_VX, gen->byte[vx]);
+  gen->mov(reg_VY, gen->byte[vy]);
 
   switch (op & 0xf000) {
   case 0x0000: {
     switch (addr) {
     case 0x0E0:
-      gen->mov(gen->word[vx], reg_VX);
-      gen->mov(gen->word[vy], reg_VY);
-      gen->mov(gen->word[vf], reg_VF);
-      gen->mov(arg1, thisOffset(display));
-      gen->add(arg1, contextPtr);
+      gen->mov(gen->byte[vx], reg_VX);
+      gen->mov(gen->byte[vy], reg_VY);
+      gen->mov(gen->byte[vf], reg_VF);
+      gen->lea(arg1, gen->qword[contextPtr + thisOffset(display)]);
       gen->mov(arg2.cvt32(), 0);
       gen->mov(arg3, 32*sizeof(u64));
       gen->mov(contextPtr, (uintptr_t)memset);
       gen->call(contextPtr);
       gen->mov(contextPtr, (uintptr_t)this);
-      gen->mov(reg_VX, gen->word[vx]);
-      gen->mov(reg_VY, gen->word[vy]);
-      gen->mov(reg_VF, gen->word[vf]);
+      gen->mov(reg_VX, gen->byte[vx]);
+      gen->mov(reg_VY, gen->byte[vy]);
+      gen->mov(reg_VF, gen->byte[vf]);
       gen->mov(gen->byte[contextPtr + thisOffset(draw)], 1);
       IncPC;
       break;
@@ -205,7 +205,7 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(gen->r11b, gen->byte[contextPtr + thisOffset(sp)]);
       gen->sub(gen->r11b, 1);
       gen->mov(gen->byte[contextPtr + thisOffset(sp)], gen->r11b);
-      gen->mov(reg_PC, gen->word[2*contextPtr + thisOffset(stack[0]) + thisOffset(sp)]);
+      gen->mov(reg_PC, gen->word[contextPtr + thisOffset(stack[0]) + thisOffset(sp)]);
       IncPC;
       break;
     default: unimplemented("0x0000: %04X", addr);
@@ -223,29 +223,32 @@ void CoreState::EmitInstruction(u16 op) {
     break;
   case 0x3000:
     gen->mov(gen->r11w, 2);
-    gen->mov(gen->word[vx], reg_VX);
+    gen->mov(gen->byte[vx], reg_VX);
     gen->cmp(reg_VX, kk);
+    gen->xor_(reg_VX, reg_VX);
     gen->cmove(reg_VX, gen->r11w);
     gen->add(reg_PC, reg_VX);
-    gen->mov(reg_VX, gen->word[vx]);
+    gen->mov(reg_VX, gen->byte[vx]);
     IncPC;
     break;
   case 0x4000:
     gen->mov(gen->r11w, 2);
-    gen->mov(gen->word[vx], reg_VX);
+    gen->mov(gen->byte[vx], reg_VX);
     gen->cmp(reg_VX, kk);
+    gen->xor_(reg_VX, reg_VX);
     gen->cmovne(reg_VX, gen->r11w);
     gen->add(reg_PC, reg_VX);
-    gen->mov(reg_VX, gen->word[vx]);
+    gen->mov(reg_VX, gen->byte[vx]);
     IncPC;
     break;
   case 0x5000:
     gen->mov(gen->r11w, 2);
-    gen->mov(gen->word[vx], reg_VX);
+    gen->mov(gen->byte[vx], reg_VX);
     gen->cmp(reg_VX, reg_VY);
+    gen->xor_(reg_VX, reg_VX);
     gen->cmove(reg_VX, gen->r11w);
     gen->add(reg_PC, reg_VX);
-    gen->mov(reg_VX, gen->word[vx]);
+    gen->mov(reg_VX, gen->byte[vx]);
     IncPC;
     break;
   case 0x6000:
@@ -317,11 +320,12 @@ void CoreState::EmitInstruction(u16 op) {
     break;
   case 0x9000:
     gen->mov(gen->r11w, 2);
-    gen->mov(gen->word[vx], reg_VX);
+    gen->mov(gen->byte[vx], reg_VX);
     gen->cmp(reg_VX, reg_VY);
+    gen->xor_(reg_VX, reg_VX);
     gen->cmovne(reg_VX, gen->r11w);
     gen->add(reg_PC, reg_VX);
-    gen->mov(reg_VX , gen->word[vx]);
+    gen->mov(reg_VX , gen->byte[vx]);
     IncPC;
     break;
   case 0xA000:
@@ -330,25 +334,22 @@ void CoreState::EmitInstruction(u16 op) {
     IncPC;
     break;
   case 0xB000:
-    gen->mov(gen->r11b, gen->byte[contextPtr + thisOffset(v[0])]);
-    gen->add(gen->r11w, addr);
-    gen->mov(reg_PC, gen->r11w);
+    gen->mov(reg_PC, gen->byte[contextPtr + thisOffset(v[0])]);
+    gen->add(reg_PC, addr);
     break;
   case 0xC000:
     gen->mov(reg_VX, rand() & kk);
     IncPC;
     break;
   case 0xD000:
-    gen->mov(gen->word[vx], reg_VX);
-    gen->mov(gen->word[vy], reg_VY);
-    gen->mov(gen->word[vf], reg_VF);
-    gen->mov(arg2.cvt8(), gen->byte[vx]);
-    gen->mov(arg3.cvt8(), gen->byte[vy]);
     gen->mov(arg4.cvt8(), n);
+    gen->mov(gen->byte[vf], reg_VF);
+    gen->mov(arg3.cvt8(), reg_VY);
+    gen->mov(arg2.cvt8(), reg_VX);
     emitMemberCall(&CoreState::dxyn, this);
-    gen->mov(reg_VX, gen->word[vx]);
-    gen->mov(reg_VY, gen->word[vy]);
-    gen->mov(reg_VF, gen->word[vf]);
+    gen->mov(reg_VX, arg2.cvt8());
+    gen->mov(reg_VY, arg3.cvt8());
+    gen->mov(reg_VF, gen->byte[vf]);
     IncPC;
     break;
   case 0xE000: unimplemented("0xE000: %02X", kk);
@@ -376,22 +377,22 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(gen->word[contextPtr + thisOffset(ip)], gen->r11w);
       break;
     case 0x33:
-      gen->mov(gen->word[vy], reg_VY);
-      gen->mov(gen->word[vf], reg_VF);
+      gen->mov(gen->byte[vy], reg_VY);
+      gen->mov(gen->byte[vf], reg_VF);
       gen->mov(arg2.cvt8(), x);
       gen->mov(arg3.cvt8(), y);
       emitMemberCall(&CoreState::Fx33, this);
-      gen->mov(reg_VY, gen->word[vy]);
-      gen->mov(reg_VF, gen->word[vf]);
+      gen->mov(reg_VY, gen->byte[vy]);
+      gen->mov(reg_VF, gen->byte[vf]);
 
       invalidate(ip);
       invalidate(ip + 1);
       invalidate(ip + 2);
       break;
     case 0x55:
-      gen->mov(gen->word[vx], reg_VX);
-      gen->mov(gen->word[vy], reg_VY);
-      gen->mov(gen->word[vf], reg_VF);
+      gen->mov(gen->byte[vx], reg_VX);
+      gen->mov(gen->byte[vy], reg_VY);
+      gen->mov(gen->byte[vf], reg_VF);
       gen->mov(arg1, thisOffset(ram[ip]));
       gen->add(arg1, contextPtr);
       gen->mov(arg2, thisOffset(v[0]));
@@ -400,16 +401,16 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(contextPtr, (uintptr_t)memcpy);
       gen->call(contextPtr);
       gen->mov(contextPtr, (uintptr_t)this);
-      gen->mov(reg_VX, gen->word[vx]);
-      gen->mov(reg_VY, gen->word[vy]);
-      gen->mov(reg_VF, gen->word[vf]);
+      gen->mov(reg_VX, gen->byte[vx]);
+      gen->mov(reg_VY, gen->byte[vy]);
+      gen->mov(reg_VF, gen->byte[vf]);
 
       invalidate(ip);
       break;
     case 0x65:
-      gen->mov(gen->word[vx], reg_VX);
-      gen->mov(gen->word[vy], reg_VY);
-      gen->mov(gen->word[vf], reg_VF);
+      gen->mov(gen->byte[vx], reg_VX);
+      gen->mov(gen->byte[vy], reg_VY);
+      gen->mov(gen->byte[vf], reg_VF);
       gen->mov(arg1, thisOffset(v[0]));
       gen->add(arg1, contextPtr);
       gen->mov(arg2, thisOffset(ram[ip]));
@@ -418,9 +419,9 @@ void CoreState::EmitInstruction(u16 op) {
       gen->mov(contextPtr, (uintptr_t)memcpy);
       gen->call(contextPtr);
       gen->mov(contextPtr, (uintptr_t)this);
-      gen->mov(reg_VX, gen->word[vx]);
-      gen->mov(reg_VY, gen->word[vy]);
-      gen->mov(reg_VF, gen->word[vf]);
+      gen->mov(reg_VX, gen->byte[vx]);
+      gen->mov(reg_VY, gen->byte[vy]);
+      gen->mov(reg_VF, gen->byte[vf]);
       break;
     default: unimplemented("0xF000: %02X", kk);
     }
@@ -429,8 +430,8 @@ void CoreState::EmitInstruction(u16 op) {
   default: unimplemented("%04X", op & 0xf000);
   }
 
-  gen->mov(gen->word[vx], reg_VX);
-  gen->mov(gen->word[vy], reg_VY);
+  gen->mov(gen->byte[vx], reg_VX);
+  gen->mov(gen->byte[vy], reg_VY);
 
   cycles++;
   if (cycles >= kTimersRate) {
