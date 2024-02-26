@@ -202,11 +202,10 @@ void CoreState::EmitInstruction(u16 op) {
       IncPC;
       break;
     case 0x0EE:
-      gen->xor_(gen->r11, gen->r11);
       gen->mov(gen->r11b, gen->byte[contextPtr + thisOffset(sp)]);
       gen->sub(gen->r11b, 1);
       gen->mov(gen->byte[contextPtr + thisOffset(sp)], gen->r11b);
-      gen->mov(reg_PC, gen->word[2*contextPtr + thisOffset(stack[0]) + gen->r11]);
+      gen->mov(reg_PC, gen->word[2*contextPtr + thisOffset(stack[0]) + thisOffset(sp)]);
       IncPC;
       break;
     default: unimplemented("0x0000: %04X", addr);
